@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Batalha dos Pronomes Online</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #08152f;
+      color: #fff;
+      text-align: center;
+      margin: 0;
+    }
+    .box {
+      max-width: 850px;
+      margin: auto;
+      padding: 20px;
+    }
+    .card {
+      background: #12254d;
+      padding: 20px;
+      border-radius: 16px;
+      margin: 12px;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    input, button {
+      padding: 11px;
+      border-radius: 9px;
+      border: 0;
+      font-size: 16px;
+    }
+    button {
+      background: #2563eb;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    .orange { background: #f59e0b; }
+    .hidden { display: none; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(5, 48px);
+      gap: 4px;
+      justify-content: center;
+      margin: 15px auto;
+    }
+    .cell {
+      width: 48px;
+      height: 48px;
+      background: #2563eb;
+    }
+    .ship { background: #16a34a; }
+    .hit { background: #dc2626 !important; }
+    .miss { background: #64748b !important; }
+    .answers { margin: 12px; }
+    .answers button { margin: 4px; }
+    .msg { min-height: 25px; font-weight: bold; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>⚓ Batalha dos Pronomes</h1>
+    
+    <div id="lobby" class="card">
+      <h2>Jogar online</h2>
+      <input id="name" placeholder="Seu nome">
+      <div class="row">
+        <button onclick="create()">Criar sala</button>
+        <input id="code" placeholder="Código da sala">
+        <button onclick="join()">Entrar</button>
+      </div>
+      <p>Compartilhe o código com o outro jogador.</p>
+    </div>
+
+    <div id="game" class="hidden">
+      <div class="card">
+        <b>Sala: <span id="room"></span></b>
+        <p id="players"></p>
+        <h3 id="turn"></h3>
+      </div>
+      <div class="card">
+        <h3 id="question"></h3>
+        <div id="answers" class="answers"></div>
+        <div id="msg" class="msg"></div>
+      </div>
+      <div class="card">
+        <h3>Tabuleiro do adversário</h3>
+        <div id="grid" class="grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const s = io();
+    let me = -1, room = "", can = false;
+
+    function create() {
+      s.emit("create", document.getElementById("name").value);
+    }
+
+    function join() {
+      s.emit("join", {
+        code: document.getElementById("code").value,
+        name: document.getElementById("name").value
+      });
+    }
+
+    s.on("created", c => {
+      room = c;
+      me = 0;
+      openGame();
+    });
+
+    s.on("state", r => {
+      document.getElementById("players").textContent = r.players.map(p => p.name + (p.ready ? " ✅" : " ⏳")).join("  ×  ");
+      document.getElementById("turn").textContent = "Vez do " + r.players[r.turn].name;
+    });
+
+    s.on("question", q => {
+      document.getElementById("question").textContent = q[0];
+      let a = document.getElementById("answers");
+      a.innerHTML = "";
+      q[1].forEach((x, i) => {
+        let b = document.createElement("button");
+        b.textContent = x;
+        b.onclick = () => {
+          s.emit("answer", i);
+          a.querySelectorAll("button").forEach(btn => btn.disabled = true);
+        };
+        a.appendChild(b);
+      });
+    });
+
+    s.on("canAttack", p => {
+      can = p === me;
+      document.getElementById("msg").textContent = can ? "✅ Correto! Escolha uma casa para atacar." : "";
+      buildGrid();
+    });
+
+    function buildGrid() {
+      let g = document.getElementById("grid");
+      g.innerHTML = "";
+      for (let i = 0; i < 25; i++) {
+        let b = document.createElement("button");
+        b.className = "cell";
+        b.onclick = () => {
+          if (can) {
+            can = false;
+            b.disabled = true;
+            s.emit("attack", i);
+          }
+        };
+        g.appendChild(b);
+      }
+    }
+
+    s.on("answerResult", x => {
+      document.getElementById("msg").textContent = x.ok ? "✅ Correto! Ataque o adversário." : "❌ Incorreto. Resposta: " + x.correct;
+    });
+
+    s.on("attackResult", x => {
+      if (x.by === me) {
+        document.querySelectorAll(".cell")[x.idx].classList.add(x.hit ? "hit" : "miss");
+      }
+    });
+
+    s.on("win", p => {
+      document.getElementById("msg").textContent = p === me ? "🏆 Você venceu!" : "😵 Você perdeu!";
+      can = false;
+    });
+
+    s.on("errorMsg", x => alert(x));
+
+    function openGame() {
+      document.getElementById("lobby").classList.add("hidden");
+      document.getElementById("game").classList.remove("hidden");
+      document.getElementById("room").textContent = room;
+      buildGrid();
+    }
+  </script>
+</body>
+</html>
